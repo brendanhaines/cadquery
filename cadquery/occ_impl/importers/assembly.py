@@ -221,6 +221,27 @@ def importXml(assy: AssemblyProtocol, path: str):
 
 
 def _importDoc(doc: TDocStd_Document, assy: AssemblyProtocol):
+    def _unique_name(
+        parent: AssemblyProtocol,
+        preferred: str,
+        fallback: str = "component",
+    ) -> str:
+        """
+        Return a name unique within the CadQuery assembly.
+
+        STEP permits multiple occurrences with the same name, while
+        CadQuery requires assembly object names to be unique.
+        """
+        base = preferred or fallback
+        candidate = base
+        suffix = 2
+
+        while candidate in parent.objects:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+
+        return candidate
+
     def _process_label(lbl: TDF_Label, parent: AssemblyProtocol):
         """
         Recursive method to process the assembly in a top-down manner.
@@ -250,7 +271,13 @@ def _importDoc(doc: TDocStd_Document, assy: AssemblyProtocol):
                     # Find the name of this referenced part
                     ref_name = _get_name(ref_label)
 
-                    sub_assy = assy.__class__(name=ref_name)
+                    instance_name = _unique_name(
+                        parent,
+                        comp_name,
+                        ref_name,
+                    )
+
+                    sub_assy = assy.__class__(name=instance_name)
 
                     # Recursively process subassemblies
                     _ = _process_label(ref_label, sub_assy)
@@ -259,7 +286,7 @@ def _importDoc(doc: TDocStd_Document, assy: AssemblyProtocol):
                     parent.add(
                         sub_assy,
                         loc=cq_loc,
-                        name=ref_name,
+                        name=instance_name,
                         color=color,
                         material=material,
                     )
@@ -290,17 +317,23 @@ def _importDoc(doc: TDocStd_Document, assy: AssemblyProtocol):
                         # change the current assy to handle subshape data
                         current = parent
                     else:
+                        instance_name = _unique_name(
+                            parent,
+                            comp_name,
+                            ref_name,
+                        )
+
                         tmp = assy.__class__(
                             cq_shape,
                             loc=cq_loc,
-                            name=comp_name,
+                            name=instance_name,
                             color=color,
                             material=material,
                         )
                         parent.add(tmp)
 
                         # change the current assy to handle subshape data
-                        current = cast(AssemblyProtocol, parent[comp_name])
+                        current = cast(AssemblyProtocol, parent[instance_name])
 
                     # iterate over subshape and handle names, layers and colors
                     subshape_labels = TDF_LabelSequence()
